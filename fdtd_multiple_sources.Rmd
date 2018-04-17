@@ -1,0 +1,121 @@
+---
+title: "The Finite Difference Time Domain Method (2D): Multiple Sources"
+author: "Tom Constant"
+date: "10 April 2018"
+output: 
+  html_document: 
+    theme: cosmo
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This is a simple attempt at writing a 2D FDTD simulation in R. 
+
+## Physical Constants
+
+```{r}
+epsilon_0 <- 8.854187817e−12
+mu_0 <- 1.2566370614e−6
+
+Omega_0 <- sqrt(mu_0/epsilon_0)
+```
+
+## Simulation Parameters
+
+```{r}
+dt <- 0.1
+epsilon_r <- 1
+mu_r <- 1
+
+period <- 40*dt
+
+dy <- dx <- dt/4*sqrt(2)
+a <- -2
+b <- 2
+
+x <- seq(from = a, to = b+dx/2, by = dx)
+y <- seq(from = a, to = b+dy/2, by = dy)
+t <- seq(from = 0, to = 36 + dt/2, by = dt)
+
+origin_x <- round(length(x)/2) + 1
+origin_y <- round(length(y)/2) + 1
+```
+
+## Arrays
+
+### Fields
+
+```{r}
+E_z <- array(data = 0, dim = c(length(x), length(y), length(t)))
+H_y <- E_z # need ot be zeros arrays
+H_x <- E_z
+```
+
+### Optical Constants
+
+Example shows an air box surrounded by perfect conductor(fields must equal 0). A high refractive index box is set up right of center.
+
+```{r}
+Epsilon_r <- array(data = 1, dim = c(length(x), length(y)))
+Mu_r <- Epsilon_r
+
+Epsilon_r[x > 1, ] <- 9
+image(Re(Epsilon_r))
+```
+
+### Source
+
+Source is a single sinusoidal pulse.
+
+```{r}
+Source <- E_z # just zeros
+Source[origin_x, origin_y, t < period] <- sin(2*pi*t[t < period]/4)
+Source[origin_x-20, origin_y-20, t < period] <- sin(2*pi*t[t < period]/4)
+
+plot(Re(Source[origin_x,origin_y,]), type='l')
+```
+
+## Simulation
+
+Solve the wave equation for magnetic (H) and electric(E) fields for each time step. Simulation is vectorised, need notes on this here.
+
+```{r}
+nx <- length(x)
+ny <- length(y)
+
+
+for(t_i in seq(2, length(t))){
+  
+  H_y[1:(nx-1), 1:(ny-1), t_i] <-
+  H_y[1:(nx-1), 1:(ny-1), t_i - 1] +
+    (1 / Mu_r[1:(nx-1), 1:(ny-1)] / Omega_0 * 
+    (E_z[2:(nx), 1:(ny-1), t_i - 1] - E_z[1:(nx-1), 1:(ny-1), t_i - 1]) / sqrt(2))
+  
+  H_x[1:(nx-1), 1:(nx-1), t_i] <-
+  H_x[1:(nx-1), 1:(nx-1), t_i - 1] -
+    (1 / Mu_r[1:(nx-1), 1:(ny-1)] / Omega_0 * 
+    (E_z[1:(nx-1), 2:(ny), t_i - 1] - E_z[1:(nx-1), 1:(ny-1), t_i - 1]) / sqrt(2))
+  
+  E_z[2:(nx-1), 2:(ny-1), t_i] <-
+  (E_z[2:(nx-1), 2:(ny-1), t_i - 1] + 
+    1 / Epsilon_r[2:(nx-1),2:(ny-1)] * Omega_0 * 
+    (
+      (H_y[2:(nx-1), 2:(ny-1), t_i] - H_y[1:(nx-2), 2:(ny-1), t_i]) -
+        (H_x[2:(nx-1), 2:(ny-1), t_i] - H_x[2:(nx-1),1:(ny-2) , t_i])
+      ) / sqrt(2) + Source[2:(nx-1), 2:(ny-1), t_i])
+  
+}
+
+```
+
+## Result
+
+```{r, fig.show='animate', interval=0.01}
+for(i in 1:length(t)){
+  fields::image.plot(Re(E_z[,,i]), asp = 1,col = viridis::viridis(200))
+}
+```
